@@ -1,5 +1,9 @@
 # Local LLM Prompt Optimizer
 
+> **DEPRECATED.** This repository is archived and no longer maintained.
+> It is kept read-only for reference; its GDS anchor records
+> `lifecycle: archived` under `portfolio:archived-projects`.
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![Docker](https://img.shields.io/badge/docker-ready-brightgreen.svg)](https://www.docker.com/)
