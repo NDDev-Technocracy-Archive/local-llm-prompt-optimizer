@@ -1,146 +1,72 @@
-name: Security Checks
+name: Security
+
+# Consolidated security suite for local-llm-prompt-optimizer (public repo).
+# Replaces the previous ad-hoc security.yml. Each job delegates to a
+# digest-pinned reusable workflow from NDDev-it-com/ci-workflows@<pinned-sha>.
+#
+# Replaces: CodeQL (now public-codeql), dependency-review (now
+# public-dependency-review), bandit + trivy secret scan (now secret-scan +
+# semgrep). Dockerfile linting is added via hadolint.
 
 on:
-  push:
-    branches: [ main, dev, develop ]
   pull_request:
-    branches: [ main, dev, develop ]
-  schedule:
-    - cron: '0 0 * * 0'  # Weekly on Sunday
+    branches: ["main"]
+  workflow_dispatch:
 
-permissions:
-  contents: read
-  security-events: write
-  actions: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions: {}
 
 jobs:
-  codeql-analysis:
-    name: CodeQL Security Analysis
-    runs-on: ubuntu-latest
-
-    strategy:
-      fail-fast: false
-      matrix:
-        language: [ 'python', 'javascript' ]
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-
-      - name: Initialize CodeQL
-        uses: github/codeql-action/init@v3
-        with:
-          languages: ${{ matrix.language }}
-          queries: security-extended,security-and-quality
-
-      - name: Autobuild
-        uses: github/codeql-action/autobuild@v3
-
-      - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v3
-        with:
-          category: "/language:${{ matrix.language }}"
-
-  dependency-review:
-    name: Dependency Review
-    runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-
-      - name: Dependency Review
-        uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48 # v4.9.0
-        with:
-          fail-on-severity: moderate
-
-  python-security-scan:
-    name: Python Security Scan (Bandit)
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-
-      - name: Set up Python
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
-        with:
-          python-version: '3.11'
-
-      - name: Install Bandit
-        run: pip install bandit[toml]
-
-      - name: Run Bandit security scan
-        working-directory: ./backend
-        run: |
-          bandit -r src/ -f json -o bandit-report.json || true
-          bandit -r src/ -f txt
-
-      - name: Upload Bandit results
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        if: always()
-        with:
-          name: bandit-security-report
-          path: backend/bandit-report.json
-
-  docker-security-scan:
-    name: Docker Image Security Scan
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-
-      - name: Build backend image
-        run: docker build -t local-llm-optimizer-backend:test ./backend
-
-      - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
-        with:
-          image-ref: local-llm-optimizer-backend:test
-          format: 'sarif'
-          output: 'trivy-results.sarif'
-          severity: 'CRITICAL,HIGH'
-
-      - name: Upload Trivy results to GitHub Security
-        uses: github/codeql-action/upload-sarif@v3
-        if: always()
-        with:
-          sarif_file: 'trivy-results.sarif'
+  codeql:
+    name: CodeQL
+    uses: NDDev-it-com/ci-workflows/.github/workflows/public-codeql.yml@c26c516559c01166a35b852c0d2a925cc1bd8db8
+    with:
+      languages: '["python","javascript"]'
+      queries: 'security-and-quality'
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
 
   secret-scan:
-    name: Secret Scanning
-    runs-on: ubuntu-latest
+    name: Secret scan (gitleaks)
+    uses: NDDev-it-com/ci-workflows/.github/workflows/secret-scan.yml@c26c516559c01166a35b852c0d2a925cc1bd8db8
+    permissions:
+      contents: read
 
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-        with:
-          fetch-depth: 0
+  actionlint:
+    name: actionlint
+    uses: NDDev-it-com/ci-workflows/.github/workflows/actionlint.yml@c26c516559c01166a35b852c0d2a925cc1bd8db8
+    permissions:
+      contents: read
 
-      - name: TruffleHog OSS (Pull Request)
-        if: github.event_name == 'pull_request'
-        uses: trufflesecurity/trufflehog@6f3c981e7b77f235fd2702dd74af25fc4b72bf11 # v3.96.0
-        with:
-          path: ./
-          base: ${{ github.event.pull_request.base.sha }}
-          head: ${{ github.event.pull_request.head.sha }}
-          extra_args: --debug --only-verified
+  zizmor-sarif:
+    name: zizmor (SARIF)
+    uses: NDDev-it-com/ci-workflows/.github/workflows/zizmor-sarif.yml@c26c516559c01166a35b852c0d2a925cc1bd8db8
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
 
-      - name: TruffleHog OSS (Push)
-        if: github.event_name == 'push'
-        uses: trufflesecurity/trufflehog@6f3c981e7b77f235fd2702dd74af25fc4b72bf11 # v3.96.0
-        with:
-          path: ./
-          base: ${{ github.event.before }}
-          head: ${{ github.sha }}
-          extra_args: --debug --only-verified
-        continue-on-error: true
+  dependency-review:
+    name: Dependency review
+    uses: NDDev-it-com/ci-workflows/.github/workflows/public-dependency-review.yml@c26c516559c01166a35b852c0d2a925cc1bd8db8
+    permissions:
+      contents: read
+      pull-requests: write
 
-      - name: TruffleHog OSS (Scheduled)
-        if: github.event_name == 'schedule'
-        uses: trufflesecurity/trufflehog@6f3c981e7b77f235fd2702dd74af25fc4b72bf11 # v3.96.0
-        with:
-          path: ./
-          extra_args: --debug --only-verified
+  hadolint:
+    name: hadolint (Dockerfiles)
+    uses: NDDev-it-com/ci-workflows/.github/workflows/hadolint-ci.yml@c26c516559c01166a35b852c0d2a925cc1bd8db8
+    with:
+      # Lint every Dockerfile in the tree (backend, frontend, telegram-bot).
+      recursive: true
+
+  semgrep:
+    name: semgrep (SAST)
+    uses: NDDev-it-com/ci-workflows/.github/workflows/semgrep-ci.yml@c26c516559c01166a35b852c0d2a925cc1bd8db8
+    with:
+      config: 'p/ci'
