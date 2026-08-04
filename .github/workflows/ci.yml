@@ -24,7 +24,7 @@ permissions: {}
 jobs:
   backend:
     name: Backend (Python)
-    uses: NDDev-it-com/ci-workflows/.github/workflows/python-ci.yml@ca538d59aef41c1bb03c3669366c368128d5af88
+    uses: NDDev-it-com/ci-workflows/.github/workflows/python-ci.yml@b05016e27151e2d5b3f07e1d856fff50f635ab15
     with:
       python_version: '3.11'
       working_directory: './backend'
@@ -39,7 +39,7 @@ jobs:
 
   frontend:
     name: Frontend (Node/Bun)
-    uses: NDDev-it-com/ci-workflows/.github/workflows/node-ci.yml@ca538d59aef41c1bb03c3669366c368128d5af88
+    uses: NDDev-it-com/ci-workflows/.github/workflows/node-ci.yml@b05016e27151e2d5b3f07e1d856fff50f635ab15
     with:
       working_directory: './frontend'
       # npm project (package-lock.json) executed under Bun as a build smoke test.
