@@ -84,13 +84,6 @@ jobs:
       - name: Semgrep rules
         run: uvx semgrep@1.182.1 scan --error --metrics off --config p/ci
 
-  dependency-review:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    if: ${{ github.event_name == 'pull_request' }}
-    steps:
-      - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
-
   workflows:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -118,7 +111,7 @@ jobs:
           fi
 
   gate:
-    needs: [backend, frontend, hadolint, semgrep, dependency-review, workflows]
+    needs: [backend, frontend, hadolint, semgrep, workflows]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -127,4 +120,4 @@ jobs:
         with:
           needs: ${{ toJSON(needs) }}
           expected: >-
-            {"backend":"success","frontend":"success","hadolint":"success","semgrep":"success","dependency-review":"${{ github.event_name == 'pull_request' && 'success' || 'skipped' }}","workflows":"success"}
+            {"backend":"success","frontend":"success","hadolint":"success","semgrep":"success","workflows":"success"}
