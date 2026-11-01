@@ -1,48 +1,123 @@
-name: CI
-
-# Consolidated CI for local-llm-prompt-optimizer. Replaces the previous
-# ad-hoc ci.yml / code-quality.yml / docker.yml / performance.yml workflows.
-# Backend delegates to python-ci; frontend delegates to node-ci (Bun). Both are
-# pinned reusable workflows from NDDev-it-com/ci-workflows@<pinned-sha>.
-#
-# NOTE: This is an archived repo. Consolidation intentionally drops Codecov,
-# SonarCloud, Locust, memory profiling, Lighthouse, Docker build/load tests,
-# and bandit reports (replaced by the security.yml suite). These integrations
-# were mostly disabled or advisory already.
+name: ci
 
 on:
   pull_request:
-    branches: ["main"]
+  push:
+    branches: [main]
   workflow_dispatch:
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+permissions:
+  contents: read
 
-permissions: {}
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  # Obsolete pull-request heads are cancelled; a running main validation always completes.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   backend:
-    name: Backend (Python)
-    uses: NDDev-it-com/ci-workflows/.github/workflows/python-ci.yml@b05016e27151e2d5b3f07e1d856fff50f635ab15
-    with:
-      python_version: '3.11'
-      working_directory: './backend'
-      # requirements.txt (no pyproject/uv.lock in this repo); uv provides the env.
-      install_command: 'uv pip install --system -r requirements.txt'
-      # Lint (flake8), type-check (mypy, advisory), then run the pytest suite
-      # with the env vars the app config expects (mocked external deps in tests).
-      test_command: >-
-        flake8 src --count --select=E9,F63,F7,F82 --show-source --statistics;
-        mypy src --ignore-missing-imports --no-strict-optional || true;
-        DATABASE_URL='sqlite:///test.db' LM_STUDIO_BASE_URL='http://localhost:1234/v1' pytest tests/ -v --tb=short
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.11'
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          version: '0.13.5'
+          enable-cache: 'false'
+      - name: Install and check
+        working-directory: backend
+        run: |
+          uv pip install --system -r requirements.txt
+          DATABASE_URL='sqlite:///test.db' LM_STUDIO_BASE_URL='http://localhost:1234/v1' pytest tests/ -v --tb=short
 
   frontend:
-    name: Frontend (Node/Bun)
-    uses: NDDev-it-com/ci-workflows/.github/workflows/node-ci.yml@b05016e27151e2d5b3f07e1d856fff50f635ab15
-    with:
-      working_directory: './frontend'
-      # npm project (package-lock.json) executed under Bun as a build smoke test.
-      install_command: 'bun install --no-save'
-      # Runs the repo's build script (tsc && vite build) via Bun.
-      test_command: 'bun run build'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24.21.0'
+          package-manager-cache: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: '1.4.4'
+      - name: Install and build
+        working-directory: frontend
+        run: |
+          bun install --no-save
+          bun run build
+
+  hadolint:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: NDDev-Technocracy-Standarts/std-0004-ci-cd-workflows/.github/actions/tools@ab62f45b2a3067e5a7425d703f7fd07f1618b72c # nddev-cicd-v0.6.14
+        with:
+          capability: container
+      - name: Lint every Dockerfile
+        run: |
+          find . -name 'Dockerfile*' -not -path '*/node_modules/*' -print0 \
+            | xargs -0 --no-run-if-empty hadolint --failure-threshold warning
+
+  semgrep:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          version: '0.13.5'
+          enable-cache: 'false'
+      - name: Semgrep rules
+        run: uvx semgrep@1.182.1 scan --error --metrics off --config p/ci
+
+  workflows:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: NDDev-Technocracy-Standarts/std-0004-ci-cd-workflows/.github/actions/tools@ab62f45b2a3067e5a7425d703f7fd07f1618b72c # nddev-cicd-v0.6.14
+        with:
+          capability: security
+      - name: Lint and audit workflows
+        run: |
+          actionlint
+          zizmor --offline --no-progress .github
+      - name: Scan new pull request commits, or the full history on main
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [ -n "$BASE" ]; then
+            gitleaks git --no-banner --redact --log-opts="$BASE..$HEAD" .
+          else
+            gitleaks git --no-banner --redact .
+          fi
+
+  gate:
+    needs: [backend, frontend, hadolint, semgrep, workflows]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: NDDev-Technocracy-Standarts/std-0004-ci-cd-workflows/.github/actions/gate@ab62f45b2a3067e5a7425d703f7fd07f1618b72c # nddev-cicd-v0.6.14
+        with:
+          needs: ${{ toJSON(needs) }}
+          expected: >-
+            {"backend":"success","frontend":"success","hadolint":"success","semgrep":"success","workflows":"success"}
