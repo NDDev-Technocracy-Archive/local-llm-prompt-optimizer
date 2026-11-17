@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "assets": [
+    {
+      "repository": "hadolint/hadolint",
+      "asset": 496546506,
+      "tag": "v2.15.1",
+      "name": "hadolint-linux-x86_64",
+      "file": "hadolint",
+      "size": 55661096,
+      "sha256": "c7187db94eeeeca956519a6af171adc31453941a1e777961f6e680f697c8c507",
+      "executable": true
+    }
+  ]
+}

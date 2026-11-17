@@ -2,122 +2,109 @@ name: ci
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, edited]
   push:
     branches: [main]
   workflow_dispatch:
 
-permissions:
-  contents: read
+permissions: {}
 
 concurrency:
   group: ci-${{ github.event.pull_request.number || github.ref }}
-  # Obsolete pull-request heads are cancelled; a running main validation always completes.
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   backend:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: NDDev-Technocracy-OpenNetwork/nddev-ci/actions/prepare@98ff340ab5d2e0f62821a6ee25fd4161b87f59ba # v0.6.69
         with:
-          persist-credentials: false
+          managed: 'false'
+          uv-version: '0.13.5'
+      # Preserve the existing interpreter channel until its ordinary proposal qualifies.
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
-          python-version: '3.11'
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
-        with:
-          version: '0.13.5'
-          enable-cache: 'false'
-      - name: Install and check
-        working-directory: backend
+          python-version-file: .github/.python-version
+      - name: Prepare the unchanged requirements
+        id: dependencies
+        run: just setup-backend
+      - name: Parse source and run the existing mocked suite
+        id: project
         run: |
-          uv pip install --system -r requirements.txt
-          DATABASE_URL='sqlite:///test.db' LM_STUDIO_BASE_URL='http://localhost:1234/v1' pytest tests/ -v --tb=short
+          just check-python
+          just test
+      - uses: NDDev-Technocracy-OpenNetwork/nddev-ci/actions/complete@98ff340ab5d2e0f62821a6ee25fd4161b87f59ba # v0.6.69
+        if: always()
+        with:
+          status: ${{ job.status }}
+          project-outcome: ${{ steps.dependencies.outcome == 'failure' && 'failure' || steps.project.outcome }}
+          task: backend synthetic qualification
+          name: backend
 
   frontend:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: '24.21.0'
-          package-manager-cache: false
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-        with:
-          bun-version: '1.4.4'
-      - name: Install and build
-        working-directory: frontend
-        run: |
-          bun install --no-save
-          bun run build
+    uses: NDDev-Technocracy-OpenNetwork/nddev-ci/.github/workflows/recipe.yml@98ff340ab5d2e0f62821a6ee25fd4161b87f59ba # v0.6.69
+    permissions:
+      contents: read
+    with:
+      prepare: setup-frontend
+      recipe: build
+      hosted-runner: ubuntu-24.04
+      node-version: '24.21.0'
+      bun-version: '1.4.4'
+      timeout-minutes: 15
 
   hadolint:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: NDDev-Technocracy-Standarts/std-0004-ci-cd-workflows/.github/actions/tools@c192c6adcf22088abf456635de614d42e8fa3f8d # nddev-cicd-v0.6.20
-        with:
-          capability: container
-      - name: Lint every Dockerfile
-        run: |
-          find . -name 'Dockerfile*' -not -path '*/node_modules/*' -print0 \
-            | xargs -0 --no-run-if-empty hadolint --failure-threshold warning
+    uses: NDDev-Technocracy-OpenNetwork/nddev-ci/.github/workflows/recipe.yml@98ff340ab5d2e0f62821a6ee25fd4161b87f59ba # v0.6.69
+    permissions:
+      contents: read
+    with:
+      recipe: check-docker
+      hosted-runner: ubuntu-24.04
+      tool-assets: .github/ci-container-tools.json
+      timeout-minutes: 10
 
   semgrep:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
-        with:
-          version: '0.13.5'
-          enable-cache: 'false'
-      - name: Semgrep rules
-        run: uvx semgrep@1.182.1 scan --error --metrics off --config p/ci
+    uses: NDDev-Technocracy-OpenNetwork/nddev-ci/.github/workflows/recipe.yml@98ff340ab5d2e0f62821a6ee25fd4161b87f59ba # v0.6.69
+    permissions:
+      contents: read
+    with:
+      recipe: scan
+      hosted-runner: ubuntu-24.04
+      uv-version: '0.13.5'
+      timeout-minutes: 15
 
   workflows:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          fetch-depth: 0
-      - uses: NDDev-Technocracy-Standarts/std-0004-ci-cd-workflows/.github/actions/tools@c192c6adcf22088abf456635de614d42e8fa3f8d # nddev-cicd-v0.6.20
-        with:
-          capability: security
-      - name: Lint and audit workflows
-        run: |
-          actionlint
-          zizmor --offline --no-progress .github
-      - name: Scan new pull request commits, or the full history on main
-        env:
-          BASE: ${{ github.event.pull_request.base.sha }}
-          HEAD: ${{ github.event.pull_request.head.sha }}
-        run: |
-          if [ -n "$BASE" ]; then
-            gitleaks git --no-banner --redact --log-opts="$BASE..$HEAD" .
-          else
-            gitleaks git --no-banner --redact .
-          fi
+    uses: NDDev-Technocracy-OpenNetwork/nddev-ci/.github/workflows/recipe.yml@98ff340ab5d2e0f62821a6ee25fd4161b87f59ba # v0.6.69
+    permissions:
+      contents: read
+    with:
+      recipe: check-workflows
+      hosted-runner: ubuntu-24.04
+      fetch-depth: 0
+      tools: zizmor@1.32.0,shellcheck@0.11.0
+      tool-assets: .github/ci-tools.json
+      timeout-minutes: 10
+
+  merge-stops:
+    if: github.event_name == 'pull_request'
+    uses: NDDev-Technocracy-OpenNetwork/nddev-ci/.github/workflows/merge-stops.yml@98ff340ab5d2e0f62821a6ee25fd4161b87f59ba # v0.6.69
+    permissions:
+      contents: read
 
   gate:
-    needs: [backend, frontend, hadolint, semgrep, workflows]
-    if: ${{ !cancelled() }}
+    name: gate
+    needs: [backend, frontend, hadolint, semgrep, workflows, merge-stops]
+    if: ${{ always() }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
+    permissions: {}
     steps:
-      - uses: NDDev-Technocracy-Standarts/std-0004-ci-cd-workflows/.github/actions/gate@c192c6adcf22088abf456635de614d42e8fa3f8d # nddev-cicd-v0.6.20
-        with:
-          needs: ${{ toJSON(needs) }}
-          expected: >-
-            {"backend":"success","frontend":"success","hadolint":"success","semgrep":"success","workflows":"success"}
+      - name: Require every actual source, native and security producer
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+          EXPECTED: >-
+            {"backend":"success","frontend":"success","hadolint":"success","semgrep":"success","workflows":"success","merge-stops":"${{ github.event_name == 'pull_request' && 'success' || 'skipped' }}"}
+        run: jq -e --argjson want "$EXPECTED" 'map_values(.result) == $want' <<< "$NEEDS"
