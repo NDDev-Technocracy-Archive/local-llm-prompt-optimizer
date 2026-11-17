@@ -1,8 +1,7 @@
 # Local LLM Prompt Optimizer
 
-> **DEPRECATED.** This repository is archived and no longer maintained.
-> It is kept read-only for reference; its GDS anchor records
-> `lifecycle: archived` under `portfolio:archived-projects`.
+> The application deployment is retired. Source, dependency and CI maintenance
+> continues; operator and model/provider workflows remain inactive.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
@@ -177,6 +176,10 @@ Send any text prompt → Choose vendor → (Optional) Choose Think Mode → Rece
 ```
 
 ### Development
+
+Maintained checks use `just check`; admitted execution hosts use `just setup`,
+`just test`, `just build` and `just verify`. See the [CI guide](.github/CI_CD_OVERVIEW.md).
+
 
 #### Backend
 

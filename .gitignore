@@ -275,3 +275,7 @@ dump.rdb
 # ===================
 !.gitkeep
 !.env.example
+
+# Disposable source-CI environment and its tracked interpreter selector.
+/backend/.venv-ci/
+!/.github/.python-version
